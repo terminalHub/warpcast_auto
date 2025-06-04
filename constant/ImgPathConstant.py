@@ -1,0 +1,1 @@
+HOME_THUMBS_UP ='img/ThumbsUp.png'
