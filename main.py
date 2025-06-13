@@ -45,11 +45,6 @@ def load_progress():
         return 0
     with open(config.CONFIG_FILE, "r") as f:
         return json.load(f).get("current_line", 0)
-def update_progress(cur_index):
-    if not os.path.exists(config.CONFIG_FILE):
-        return 0
-    with open(config.CONFIG_FILE, "w") as f:
-      return json.dump({"current_line": cur_index}, f)
 def screen_swipe(swipe_pixels = 600, duration=0.2):
     """
         android滑动屏幕
@@ -71,7 +66,7 @@ if __name__ == '__main__':
     bs = idManager.list_instances()
     reader = list(csv.reader(StringIO(bs.strip())))
     for i in range(start_index, len(reader)):
-        update_progress(i)
+        print(f"雷电模拟器-{i}")
         row = reader[i]
         dnplayer_id = int(row[0])
         # dnplayer_id = 1
@@ -82,21 +77,31 @@ if __name__ == '__main__':
         poll_count = 1
         while not (device_list := adbutils.adb.device_list()):
             pass
-        for device in device_list:
-            device.app_start(config.WARPCAST_PACKAGE_NAME)
-            d = u2.connect(device.serial)
-            d(text="Upgrade to Pro").wait(timeout=30)
-            while True:
-                cur_x, cur_y = OpenCVTools.find_target_img(ImgPathConstant.HOME_THUMBS_UP)
-                if None not in [cur_x, cur_y]:
-                    break
-            #向下滑动
-            screen_swipe()
-            h = win32gui.FindWindow(None, row[1])
-            # 坐标映射 win2andiron
-            android_x, android_y = OpenCVTools.win_to_android(cur_x, cur_y, h)
-            d.click(android_x, android_y)
-            time.sleep(20)
-            device.apprr_stop(config.WARPCAST_PACKAGE_NAME)
+        device = device_list[0]
+        # for device in device_list:
+            # t= device.app_start(config.WARPCAST_PACKAGE_NAME)
+        d = u2.connect(device.serial)
+        d.app_start(config.WARPCAST_PACKAGE_NAME)
+        # if current_app["package"] == "com.example.app":
+        d(description="following").wait(timeout=20)
+        current_app = device.app_current()
+        if config.WARPCAST_PACKAGE_NAME != current_app.package:
             idManager.stop_instance(dnplayer_id)
+            print(f"warpcast启动失败...")
+            continue
+        # c = d.dump_hierarchy()
+        while True:
+            time.sleep(1)
+            cur_x, cur_y = OpenCVTools.find_target_img(ImgPathConstant.HOME_THUMBS_UP)
+            if None not in [cur_x, cur_y]:
+                break
+            # 向下滑动
+            screen_swipe()
+        h = win32gui.FindWindow(None, row[1])
+        # 坐标映射 win2andiron
+        android_x, android_y = OpenCVTools.win_to_android(cur_x, cur_y, h)
+        d.click(android_x, android_y)
+        time.sleep(2)
+        device.app_stop(config.WARPCAST_PACKAGE_NAME)
+        idManager.stop_instance(dnplayer_id)
 
