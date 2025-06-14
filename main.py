@@ -2,6 +2,7 @@ import csv
 import json
 import os
 import time
+from datetime import datetime
 from io import StringIO
 
 import adbutils
@@ -45,9 +46,12 @@ def load_progress():
         return 0
     with open(config.CONFIG_FILE, "r") as f:
         return json.load(f).get("current_line", 0)
-def screen_swipe(swipe_pixels = 600, duration=0.2):
+
+
+def screen_swipe(d, swipe_pixels=600, duration=0.2):
     """
         android滑动屏幕
+    :param d:
     :param swipe_pixels: 像素个数
     :param duration:动作完成时间
     :return:
@@ -61,7 +65,63 @@ def screen_swipe(swipe_pixels = 600, duration=0.2):
     end_y = start_y - swipe_pixels
     d.drag(start_x, start_y, end_x, end_y, duration=duration)
 
-if __name__ == '__main__':
+def try_start_instance_with_retry(dnplayer_id, max_retry=3, wait_secs=15):
+    """
+    尝试拉起雷电实例
+        重试机制
+    :param dnplayer_id:
+    :param max_retry:
+    :param wait_secs:
+    :return:
+    """
+    device_list = []
+    for attempt in range(max_retry):
+        for wait in range(wait_secs):
+            time.sleep(1)
+            device_list = adbutils.adb.device_list()
+            if device_list:
+                print(f"✅ 第 {attempt + 1} 次重试中，第 {wait + 1} 秒连接成功")
+                return device_list  # 成功
+        # 本轮尝试失败，准备重启实例
+        print(f"🔄 启动失败，shell_start_雷电重试第 {attempt + 1} 次：", device_list[dnplayer_id] if dnplayer_id < len(device_list) else "无")
+        idManager.stop_instance(dnplayer_id)
+        idManager.launch_instance(dnplayer_id)
+    return []  # 所有重试失败
+def try_start_warpcast_app(d, max_retry=3, wait_timeout=20):
+    for attempt in range(max_retry):
+        print(f"🚀 启动 warpcast 第 {attempt + 1} 次尝试...")
+        d.app_start(config.WARPCAST_PACKAGE_NAME)
+        if d(description="following").wait(timeout=wait_timeout):
+            current_app = d.app_current()
+            if current_app.get('package') == config.WARPCAST_PACKAGE_NAME:
+                print("✅ warpcast 启动成功")
+                return True
+        print(f"🔄 warpcast 启动失败（尝试 {attempt + 1}/{max_retry}）")
+    return False  # 所有尝试失败
+
+
+
+def click_win_to_andrion(target_image, d, row):
+    while True:
+        time.sleep(1)
+        cur_x, cur_y = OpenCVTools.find_target_img(target_image)
+        if None not in [cur_x, cur_y]:
+            break
+        # 向下滑动
+        screen_swipe(d)
+    h = win32gui.FindWindow(None, row[1])
+    # 坐标映射 win2andiron
+    android_x, android_y = OpenCVTools.win_to_android(cur_x, cur_y, h)
+    d.click(android_x, android_y)
+
+
+def warpcast_daily_activity():
+    """
+    warpcast 日活跃
+    :return:
+    """
+    start_time = datetime.now()
+    print("🏃‍♀️ 程序开始时间:", start_time.strftime("%Y-%m-%d %H:%M:%S"))
     start_index = load_progress()
     bs = idManager.list_instances()
     reader = list(csv.reader(StringIO(bs.strip())))
@@ -69,39 +129,32 @@ if __name__ == '__main__':
         print(f"雷电模拟器-{i}")
         row = reader[i]
         dnplayer_id = int(row[0])
-        # dnplayer_id = 1
         launch_results = idManager.launch_instance(dnplayer_id)
         if launch_results.returncode != 0:
             # 启动命令失败
             continue
-        poll_count = 1
-        while not (device_list := adbutils.adb.device_list()):
-            pass
+
+        device_list =  try_start_instance_with_retry(dnplayer_id)
         device = device_list[0]
-        # for device in device_list:
-            # t= device.app_start(config.WARPCAST_PACKAGE_NAME)
-        d = u2.connect(device.serial)
-        d.app_start(config.WARPCAST_PACKAGE_NAME)
-        # if current_app["package"] == "com.example.app":
-        d(description="following").wait(timeout=20)
-        current_app = device.app_current()
-        if config.WARPCAST_PACKAGE_NAME != current_app.package:
+        print(device)
+        try:
+            d = u2.connect(device.serial)
+            print(f"✅ Connected to device: {device.serial}")
+        except Exception as e:
+            print(f"❌ Failed to connect to device {device.serial}: {e}")
             idManager.stop_instance(dnplayer_id)
-            print(f"warpcast启动失败...")
             continue
-        # c = d.dump_hierarchy()
-        while True:
-            time.sleep(1)
-            cur_x, cur_y = OpenCVTools.find_target_img(ImgPathConstant.HOME_THUMBS_UP)
-            if None not in [cur_x, cur_y]:
-                break
-            # 向下滑动
-            screen_swipe()
-        h = win32gui.FindWindow(None, row[1])
-        # 坐标映射 win2andiron
-        android_x, android_y = OpenCVTools.win_to_android(cur_x, cur_y, h)
-        d.click(android_x, android_y)
-        time.sleep(2)
+        try_start_warpcast_app(d, max_retry=3, wait_timeout=20)
+        click_win_to_andrion(ImgPathConstant.HOME_THUMBS_UP, d, row)
+        click_win_to_andrion(ImgPathConstant.HOME_fllow, d, row)
+        time.sleep(1)
         device.app_stop(config.WARPCAST_PACKAGE_NAME)
         idManager.stop_instance(dnplayer_id)
+    end_time = datetime.now()
+    print("🚶‍♀️ 程序结束时间:", end_time.strftime("%Y-%m-%d %H:%M:%S"))
+    duration = end_time - start_time
+    print(f"总耗时：{duration}（天 时:分:秒.微秒）")
 
+
+if __name__ == '__main__':
+    warpcast_daily_activity()
