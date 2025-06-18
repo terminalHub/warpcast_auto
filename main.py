@@ -48,7 +48,7 @@ def load_progress():
         return json.load(f).get("current_line", 0)
 
 
-def screen_swipe(d, swipe_pixels=600, duration=0.2):
+def screen_swipe(d, swipe_pixels=600, duration=0.1):
     """
         android滑动屏幕
     :param d:
@@ -65,28 +65,32 @@ def screen_swipe(d, swipe_pixels=600, duration=0.2):
     end_y = start_y - swipe_pixels
     d.drag(start_x, start_y, end_x, end_y, duration=duration)
 
-def try_start_instance_with_retry(dnplayer_id, max_retry=3, wait_secs=15):
+
+def try_start_instance_with_retry(dnplayer_id, max_retry=3, wait_timeout=15):
     """
     尝试拉起雷电实例
         重试机制
     :param dnplayer_id:
     :param max_retry:
-    :param wait_secs:
+    :param wait_timeout:
     :return:
     """
     device_list = []
     for attempt in range(max_retry):
-        for wait in range(wait_secs):
+        for wait in range(wait_timeout):
             time.sleep(1)
             device_list = adbutils.adb.device_list()
             if device_list:
                 print(f"✅ 第 {attempt + 1} 次重试中，第 {wait + 1} 秒连接成功")
                 return device_list  # 成功
         # 本轮尝试失败，准备重启实例
-        print(f"🔄 启动失败，shell_start_雷电重试第 {attempt + 1} 次：", device_list[dnplayer_id] if dnplayer_id < len(device_list) else "无")
+        print(f"🔄 启动失败，shell_start_雷电重试第 {attempt + 1} 次：",
+              device_list[dnplayer_id] if dnplayer_id < len(device_list) else "无")
         idManager.stop_instance(dnplayer_id)
         idManager.launch_instance(dnplayer_id)
     return []  # 所有重试失败
+
+
 def try_start_warpcast_app(d, max_retry=3, wait_timeout=20):
     for attempt in range(max_retry):
         print(f"🚀 启动 warpcast 第 {attempt + 1} 次尝试...")
@@ -100,19 +104,24 @@ def try_start_warpcast_app(d, max_retry=3, wait_timeout=20):
     return False  # 所有尝试失败
 
 
-
-def click_win_to_andrion(target_image, d, row):
-    while True:
+def try_click_win_to_andrion(target_image, d, row, max_retry=5):
+    cur_x, cur_y = None, None
+    for temp_count in range(max_retry):
+        print(f"🔄 click {target_image}:{temp_count} ...")
         time.sleep(1)
         cur_x, cur_y = OpenCVTools.find_target_img(target_image)
         if None not in [cur_x, cur_y]:
             break
+        if temp_count == max_retry -1:
+            print(f"❌ 尝试点击{target_image}失败，达到重试上限：{max_retry}！\n")
+            return False
         # 向下滑动
         screen_swipe(d)
     h = win32gui.FindWindow(None, row[1])
     # 坐标映射 win2andiron
     android_x, android_y = OpenCVTools.win_to_android(cur_x, cur_y, h)
     d.click(android_x, android_y)
+    return True
 
 
 def warpcast_daily_activity():
@@ -134,7 +143,7 @@ def warpcast_daily_activity():
             # 启动命令失败
             continue
 
-        device_list =  try_start_instance_with_retry(dnplayer_id)
+        device_list = try_start_instance_with_retry(dnplayer_id, max_retry=3, wait_timeout=15)
         device = device_list[0]
         print(device)
         try:
@@ -145,8 +154,8 @@ def warpcast_daily_activity():
             idManager.stop_instance(dnplayer_id)
             continue
         try_start_warpcast_app(d, max_retry=3, wait_timeout=20)
-        click_win_to_andrion(ImgPathConstant.HOME_THUMBS_UP, d, row)
-        click_win_to_andrion(ImgPathConstant.HOME_fllow, d, row)
+        try_click_win_to_andrion(ImgPathConstant.HOME_THUMBS_UP, d, row)
+        try_click_win_to_andrion(ImgPathConstant.HOME_fllow, d, row)
         time.sleep(1)
         device.app_stop(config.WARPCAST_PACKAGE_NAME)
         idManager.stop_instance(dnplayer_id)
