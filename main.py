@@ -113,7 +113,7 @@ def try_click_win_to_andrion(target_image, d, row, max_retry=5):
         if None not in [cur_x, cur_y]:
             break
         if temp_count == max_retry -1:
-            print(f"❌ 尝试点击{target_image}失败，达到重试上限：{max_retry}！\n")
+            print(f"❌ 尝试点击{target_image}失败，达到重试上限：{max_retry}！")
             return False
         # 向下滑动
         screen_swipe(d)
@@ -154,8 +154,15 @@ def warpcast_daily_activity():
             idManager.stop_instance(dnplayer_id)
             continue
         try_start_warpcast_app(d, max_retry=3, wait_timeout=20)
+        #点赞👍
         try_click_win_to_andrion(ImgPathConstant.HOME_THUMBS_UP, d, row)
-        try_click_win_to_andrion(ImgPathConstant.HOME_fllow, d, row)
+        #关注➕
+        try_click_win_to_andrion(ImgPathConstant.HOME_FLLOW, d, row)
+        time.sleep(0.5)
+        # 转发
+        try_click_win_to_andrion(ImgPathConstant.HOME_FORWARD, d, row)
+        #转发对话框操作
+        try_click_win_to_andrion(ImgPathConstant.DIALOG_BOX_RECAST, d, row)
         time.sleep(1)
         device.app_stop(config.WARPCAST_PACKAGE_NAME)
         idManager.stop_instance(dnplayer_id)
